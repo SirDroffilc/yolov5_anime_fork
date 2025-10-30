@@ -20,6 +20,7 @@ from utils.torch_utils import select_device, load_classifier, time_synchronized
 def detect(save_img=False):
     out, source, weights, view_img, save_txt, imgsz = \
         opt.output, opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size
+    save_crops = getattr(opt, 'save_crops', False)
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
     # Initialize
@@ -90,6 +91,9 @@ def detect(save_img=False):
             txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+            # per-image crop counter (used when saving crops)
+            crop_count = 0
+
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
@@ -109,6 +113,28 @@ def detect(save_img=False):
                     if save_img or view_img:  # Add bbox to image
                         label = '%s %.2f' % (names[int(cls)], conf)
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
+
+                    # Save cropped detection (per-class folder)
+                    if save_crops:
+                        # xyxy may be torch Tensors; convert to Python floats then clamp to image bounds
+                        coords = [float(x) for x in xyxy]
+                        x1, y1, x2, y2 = map(int, map(round, coords))
+                        h, w = im0.shape[:2]
+                        x1 = max(0, min(x1, w - 1))
+                        x2 = max(0, min(x2, w - 1))
+                        y1 = max(0, min(y1, h - 1))
+                        y2 = max(0, min(y2, h - 1))
+                        if x2 > x1 and y2 > y1:
+                            cls_name = names[int(cls)]
+                            save_dir = Path(out) / 'crops' / cls_name
+                            save_dir.mkdir(parents=True, exist_ok=True)
+                            img_stem = Path(p).stem
+                            crop_filename = f"{img_stem}_crop{crop_count}_{cls_name}_{float(conf):.2f}.jpg"
+                            crop_path = str(save_dir / crop_filename)
+                            # im0 is BGR (cv2); crop and write
+                            crop = im0[y1:y2, x1:x2]
+                            cv2.imwrite(crop_path, crop)
+                            crop_count += 1
 
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
@@ -156,6 +182,7 @@ if __name__ == '__main__':
     parser.add_argument('--view-img', action='store_true', help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
+    parser.add_argument('--save-crops', action='store_true', help='save cropped detection boxes to files')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--update', action='store_true', help='update all models')

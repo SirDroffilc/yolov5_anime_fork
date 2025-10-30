@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+import inspect
 import torch.nn as nn
 
 from models.common import Conv, DWConv
@@ -134,7 +135,22 @@ def attempt_load(weights, map_location=None):
     model = Ensemble()
     for w in weights if isinstance(weights, list) else [weights]:
         attempt_download(w)
-        model.append(torch.load(w, map_location=map_location)['model'].float().fuse().eval())  # load FP32 model
+        # torch.load gained a `weights_only` parameter in newer PyTorch versions (>=2.6)
+        # which defaults to True and only allows tensor objects by default. Some
+        # checkpoints (older/forked formats) contain non-tensor objects and thus
+        # require loading with weights_only=False. To support both old and new
+        # PyTorch safely, detect the presence of that parameter and pass it when
+        # available; otherwise fall back to the classic call.
+        load_kwargs = {"map_location": map_location}
+        try:
+            if 'weights_only' in inspect.signature(torch.load).parameters:
+                load_kwargs['weights_only'] = False
+        except Exception:
+            # If inspection fails for any reason, just attempt the default call.
+            load_kwargs = {"map_location": map_location}
+
+        state = torch.load(w, **load_kwargs)
+        model.append(state['model'].float().fuse().eval())  # load FP32 model
 
     if len(model) == 1:
         return model[-1]  # return model
