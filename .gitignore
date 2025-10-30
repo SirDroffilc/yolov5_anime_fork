@@ -1,0 +1,74 @@
+# Python caches / bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtualenvs
+.venv/
+venv/
+ENV/
+env/
+
+# PyCharm / JetBrains
+.idea/
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints
+*.ipynb  # optional: ignore raw notebooks if you prefer not to commit them
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# build / packaging
+build/
+dist/
+*.egg-info/
+
+# pyenv
+.python-version
+
+# test/coverage
+.coverage
+htmlcov/
+.tox/
+
+# caches
+.cache/
+.mypy_cache/
+
+# Env files
+.env
+
+# outputs and temporary inference results
+output/
+runs/
+inference/output/
+inference/*.mp4
+inference/*.avi
+
+# data and datasets (ignore large datasets; keep YAML configs)
+data/* 
+!data/*.yaml
+!data/*.yml
+!data/*.txt
+
+# model weights and large binaries
+weights/*.pt
+weights/*.pth
+weights/*.onnx
+weights/*.weights
+
+# other large or binary files
+*.ckpt
+*.tar.gz
+*.zip
+
+# docker-related (optional: keep if you don't want docker artifacts tracked)
+.dockerignore
