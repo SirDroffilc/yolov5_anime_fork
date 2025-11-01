@@ -20,7 +20,15 @@ from utils.torch_utils import select_device, load_classifier, time_synchronized
 def detect(save_img=False):
     out, source, weights, view_img, save_txt, imgsz = \
         opt.output, opt.source, opt.weights, opt.view_img, opt.save_txt, opt.img_size
-    save_crops = getattr(opt, 'save_crops', False)
+    # --save-crops now accepts an optional directory argument. If the arg is present
+    # (with or without a path) we enable crop-saving. If a path is provided, use it
+    # as the crop destination; otherwise default to <output>/crops/<class>/
+    save_crops_arg = getattr(opt, 'save_crops', None)
+    save_crops = save_crops_arg is not None
+    crops_dir_opt = None
+    if save_crops and isinstance(save_crops_arg, str) and save_crops_arg != '__DEFAULT__':
+        # normalize and resolve user-provided path
+        crops_dir_opt = str(Path(save_crops_arg).expanduser())
     webcam = source == '0' or source.startswith('rtsp') or source.startswith('http') or source.endswith('.txt')
 
     # Initialize
@@ -28,6 +36,12 @@ def detect(save_img=False):
     if os.path.exists(out):
         shutil.rmtree(out)  # delete output folder
     os.makedirs(out)  # make new output folder
+    # Inform where crops will be saved (useful for debugging)
+    if save_crops:
+        if crops_dir_opt:
+            print(f"Saving crops to: {crops_dir_opt}")
+        else:
+            print(f"Saving crops to default under output: {out}{os.sep}crops")
     half = device.type != 'cpu'  # half precision only supported on CUDA
 
     # Load model
@@ -50,7 +64,8 @@ def detect(save_img=False):
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsz)
     else:
-        save_img = True
+        # If user requested --save-crops, run in crops-only mode (do not save annotated images)
+        save_img = not save_crops
         dataset = LoadImages(source, img_size=imgsz)
 
     # Get names and colors
@@ -126,7 +141,11 @@ def detect(save_img=False):
                         y2 = max(0, min(y2, h - 1))
                         if x2 > x1 and y2 > y1:
                             cls_name = names[int(cls)]
-                            save_dir = Path(out) / 'crops' / cls_name
+                            # choose save directory: user-provided or default under output
+                            if crops_dir_opt:
+                                save_dir = Path(crops_dir_opt) / cls_name
+                            else:
+                                save_dir = Path(out) / 'crops' / cls_name
                             save_dir.mkdir(parents=True, exist_ok=True)
                             img_stem = Path(p).stem
                             crop_filename = f"{img_stem}_crop{crop_count}_{cls_name}_{float(conf):.2f}.jpg"
@@ -144,25 +163,6 @@ def detect(save_img=False):
                 cv2.imshow(p, im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
-
-            # Save results (image with detections)
-            if save_img:
-                if dataset.mode == 'images':
-                    cv2.imwrite(save_path, im0)
-                else:
-                    if vid_path != save_path:  # new video
-                        vid_path = save_path
-                        if isinstance(vid_writer, cv2.VideoWriter):
-                            vid_writer.release()  # release previous video writer
-
-                        fourcc = 'mp4v'  # output video codec
-                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*fourcc), fps, (w, h))
-                    vid_writer.write(im0)
-
-    if save_txt or save_img:
         print('Results saved to %s' % Path(out))
         if platform == 'darwin' and not opt.update:  # MacOS
             os.system('open ' + save_path)
@@ -182,7 +182,8 @@ if __name__ == '__main__':
     parser.add_argument('--view-img', action='store_true', help='display results')
     parser.add_argument('--save-txt', action='store_true', help='save results to *.txt')
     parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --class 0, or --class 0 2 3')
-    parser.add_argument('--save-crops', action='store_true', help='save cropped detection boxes to files')
+    parser.add_argument('--save-crops', nargs='?', const='__DEFAULT__', default=None,
+                        help='save cropped detection boxes to files. Optionally provide a directory: --save-crops [DIR]')
     parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
     parser.add_argument('--augment', action='store_true', help='augmented inference')
     parser.add_argument('--update', action='store_true', help='update all models')
